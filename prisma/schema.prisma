@@ -1,0 +1,54 @@
+// Prisma is intentionally not used in this project runtime.
+// The application uses direct SQL via `pg` to avoid ORM codegen deployment issues.
+// This file documents the intended relational model for teams that want schema reference.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Prompt {
+  id          String          @id
+  name        String
+  description String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @default(now())
+  archived    Boolean         @default(false)
+  versions    PromptVersion[]
+  tests       ABTest[]
+}
+
+model PromptVersion {
+  id            String   @id
+  promptId      String
+  versionNumber Int
+  content       String
+  notes         String
+  model         String
+  temperature   Float
+  createdAt     DateTime @default(now())
+  createdBy     String
+
+  prompt Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+
+  @@unique([promptId, versionNumber])
+}
+
+model ABTest {
+  id              String   @id
+  promptId        String
+  versionAId      String
+  versionBId      String
+  status          String
+  trafficSplit    Int
+  winnerVersionId String?
+  createdAt       DateTime @default(now())
+  startedAt       DateTime?
+  endedAt         DateTime?
+
+  prompt Prompt @relation(fields: [promptId], references: [id], onDelete: Cascade)
+}
