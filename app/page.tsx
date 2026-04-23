@@ -1,180 +1,190 @@
 import Link from "next/link";
+import { ArrowRight, BarChart3, GitBranch, LockKeyhole, TestTube2, Users } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { UnlockAccessForm } from "@/components/UnlockAccessForm";
+
+type HomePageProps = {
+  searchParams: Promise<{
+    paywall?: string;
+  }>;
+};
 
 const faqs = [
   {
-    question: "How is this different from saving prompts in a doc?",
+    question: "How is this different from storing prompts in GitHub?",
     answer:
-      "You get immutable version history, diffs between revisions, experiment tracking, and performance metrics tied to each version so teams can prove improvements instead of guessing."
+      "GitHub tracks raw text changes, but Prompt Version Tracker links each version to experiment outcomes, latency impact, and quality deltas. Teams can promote prompts with evidence instead of intuition."
   },
   {
-    question: "Can multiple prompt engineers collaborate in one workspace?",
+    question: "Can we run A/B tests without engineering support?",
     answer:
-      "Yes. Every prompt keeps a timeline of versions and test outcomes, so teams can review changes, compare quality, and promote a winner with shared context."
+      "Yes. Prompt engineers can launch tests from two existing versions, log live outcome metrics, and let the dashboard compute confidence and winner recommendations."
   },
   {
-    question: "How fast can we start?",
+    question: "How does team collaboration work?",
     answer:
-      "Most teams can create the first prompt, add two versions, and launch an A/B test in under 10 minutes. No model-provider lock-in is required."
+      "Editors get live session presence and synchronized prompt draft updates, which prevents duplicate edits and keeps version notes aligned during iterative prompt tuning."
   },
   {
-    question: "What does the paywall unlock?",
+    question: "What happens after payment?",
     answer:
-      "The full product: prompt editor, version graph, A/B testing console, and analytics dashboard are locked behind purchase-based access."
+      "After checkout, Stripe sends a webhook to register your purchase. Enter the same checkout email in the unlock form to receive a secure access cookie and open the workspace."
   }
 ];
 
-const painPoints = [
-  "Prompt edits happen in Slack, docs, and local notes with no source of truth.",
-  "Teams ship new prompts without knowing if quality actually improved.",
-  "Regression bugs appear because no one can diff working vs failing prompts.",
-  "Leaders cannot quantify prompt ROI or justify model-cost decisions."
-];
-
-const solutionPoints = [
-  "Git-style version timeline with semantic notes and instant side-by-side diffs.",
-  "Built-in A/B runner to compare candidate prompts against real scoring data.",
-  "Performance dashboard for quality, latency, token usage, and spend trends.",
-  "Single place to promote winners and keep shipping with confidence."
-];
-
-export default function LandingPage() {
-  const paymentLink = process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK;
+export default async function HomePage({ searchParams }: HomePageProps) {
+  const params = await searchParams;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-16 px-4 py-10 sm:px-6 sm:py-14">
-      <section className="grid gap-8 lg:grid-cols-2 lg:items-center">
-        <div className="space-y-6">
-          <p className="inline-flex items-center rounded-full border border-[#30363d] bg-[#11161d] px-3 py-1 text-xs font-medium text-slate-300">
-            Git for AI prompt iterations
-          </p>
-          <h1 className="text-4xl font-semibold leading-tight text-white sm:text-5xl">
-            Track every prompt change. Prove every improvement.
-          </h1>
-          <p className="max-w-xl text-base text-slate-300 sm:text-lg">
-            Prompt Version Tracker gives AI product teams a production workflow for prompt evolution: version history, measurable experiments, and analytics that show what actually works.
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row">
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-20 px-6 py-10 lg:px-10">
+      <header className="rounded-3xl border border-slate-800/90 bg-[#0f1723]/90 px-6 py-6 shadow-[0_20px_80px_rgba(4,10,20,0.45)] backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">Prompt Version Tracker</p>
+            <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
+              Git for AI prompt iterations
+            </h1>
+          </div>
+          <div className="flex gap-3">
             <a
-              href={paymentLink}
-              className="inline-flex items-center justify-center rounded-md bg-[#2f81f7] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#1f6feb]"
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
+              href={process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK}
+              rel="noreferrer"
+              target="_blank"
             >
-              Buy Now • $39/mo
+              Buy for $39/mo <ArrowRight className="h-4 w-4" />
             </a>
             <Link
-              href="/unlock"
-              className="inline-flex items-center justify-center rounded-md border border-[#30363d] bg-[#161b22] px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-[#2f81f7]"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
+              href="/dashboard"
             >
-              Already Purchased? Unlock Access
+              Open dashboard
             </Link>
           </div>
-          <p className="text-xs text-slate-400">
-            Hosted Stripe checkout. Immediate access once your purchase email is verified.
-          </p>
         </div>
+      </header>
 
-        <div className="rounded-xl border border-[#30363d] bg-[#161b22] p-5 shadow-2xl shadow-black/30">
-          <div className="mb-4 flex items-center justify-between border-b border-[#30363d] pb-3">
-            <span className="text-sm font-medium text-slate-200">Prompt Timeline</span>
-            <span className="rounded bg-[#1f6feb]/25 px-2 py-1 text-xs text-blue-300">
-              v12 promoted
-            </span>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="rounded border border-[#30363d] bg-[#11161d] p-3">
-              <p className="font-medium text-slate-100">v13 • Support Assistant</p>
-              <p className="mt-1 text-slate-400">
-                Added stricter response format and fallback escalation logic.
+      <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <article className="space-y-6">
+          <p className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-[#111a26] px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
+            <LockKeyhole className="h-4 w-4 text-sky-400" /> Built for AI product teams
+          </p>
+          <h2 className="text-4xl font-semibold leading-tight text-white sm:text-5xl">
+            Stop shipping blind prompt edits.
+            <span className="block text-sky-300">Track what changed. Measure what won.</span>
+          </h2>
+          <p className="max-w-2xl text-lg leading-relaxed text-slate-300">
+            Prompt Version Tracker gives prompt engineers a Git-like workflow with version history,
+            test orchestration, and outcome analytics. Every prompt release includes experiment data so
+            your team can scale quality without guesswork.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-800 bg-[#111a26] p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Core Pain</p>
+              <p className="mt-2 text-sm text-slate-200">
+                Teams lose prompt context across Slack threads, docs, and ad-hoc notebooks.
               </p>
-              <p className="mt-2 text-xs text-slate-500">Avg score 81.4 • Latency 920ms</p>
             </div>
-            <div className="rounded border border-[#2f81f7]/50 bg-[#102040]/30 p-3">
-              <p className="font-medium text-blue-100">v12 • A/B Winner</p>
-              <p className="mt-1 text-slate-300">
-                Compact chain-of-thought suppression and stronger refusal policy.
+            <div className="rounded-2xl border border-slate-800 bg-[#111a26] p-4">
+              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Outcome</p>
+              <p className="mt-2 text-sm text-slate-200">
+                Faster iteration velocity with auditable prompt quality improvements.
               </p>
-              <p className="mt-2 text-xs text-blue-200">Avg score 88.9 • Latency 860ms</p>
-            </div>
-            <div className="rounded border border-[#30363d] bg-[#11161d] p-3">
-              <p className="font-medium text-slate-100">v11 • Baseline</p>
-              <p className="mt-1 text-slate-400">Legacy prompt from July release branch.</p>
-              <p className="mt-2 text-xs text-slate-500">Avg score 74.7 • Latency 990ms</p>
             </div>
           </div>
-        </div>
-      </section>
+        </article>
 
-      <section className="grid gap-5 rounded-xl border border-[#30363d] bg-[#11161d] p-6 md:grid-cols-2">
-        <div>
-          <h2 className="text-2xl font-semibold text-white">The Problem</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            AI teams are shipping prompts without a reliable system to track what changed and why output quality moved.
-          </p>
-          <ul className="mt-4 space-y-3 text-sm text-slate-300">
-            {painPoints.map((item) => (
-              <li key={item} className="rounded border border-[#30363d] bg-[#161b22] p-3">
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h2 className="text-2xl font-semibold text-white">The Solution</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            A focused workflow designed for prompt engineers who need speed and evidence.
-          </p>
-          <ul className="mt-4 space-y-3 text-sm text-slate-300">
-            {solutionPoints.map((item) => (
-              <li key={item} className="rounded border border-[#30363d] bg-[#161b22] p-3">
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-[#30363d] bg-[#161b22] p-6">
-        <h2 className="text-2xl font-semibold text-white">Simple Pricing</h2>
-        <p className="mt-2 text-sm text-slate-400">
-          Built for AI product teams that need disciplined prompt iteration without enterprise overhead.
-        </p>
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2 rounded-lg border border-[#30363d] bg-[#11161d] p-5">
-            <h3 className="text-lg font-semibold text-white">Prompt Version Tracker Pro</h3>
-            <p className="mt-2 text-sm text-slate-400">
-              Unlimited prompts, full version history, A/B tests, performance analytics, and webhook-based access control.
+        <aside className="space-y-5 rounded-3xl border border-slate-800 bg-[#101824]/95 p-6">
+          {params.paywall === "locked" ? (
+            <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              Workspace access is locked. Complete checkout, then unlock with your purchase email.
             </p>
+          ) : null}
+          <UnlockAccessForm />
+          <p className="rounded-xl border border-slate-800 bg-[#0f1723] p-4 text-sm text-slate-300">
+            Configure your Stripe Payment Link success URL to return users here so they can unlock
+            instantly after purchase.
+          </p>
+        </aside>
+      </section>
+
+      <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <FeatureCard
+          icon={<GitBranch className="h-5 w-5 text-sky-300" />}
+          title="Prompt commits"
+          description="Capture each prompt version with author notes, content hash, and release-ready diffs."
+        />
+        <FeatureCard
+          icon={<TestTube2 className="h-5 w-5 text-sky-300" />}
+          title="Built-in A/B framework"
+          description="Launch side-by-side tests from any two versions and log conversion + latency outcomes."
+        />
+        <FeatureCard
+          icon={<BarChart3 className="h-5 w-5 text-sky-300" />}
+          title="Performance analytics"
+          description="See confidence scores, winner recommendations, and trend lines for prompt performance."
+        />
+        <FeatureCard
+          icon={<Users className="h-5 w-5 text-sky-300" />}
+          title="Live collaboration"
+          description="Real-time editor presence and synchronized drafts reduce merge conflicts in prompt teams."
+        />
+      </section>
+
+      <section className="rounded-3xl border border-slate-800 bg-[#101824] p-8">
+        <h3 className="text-2xl font-semibold text-white">Pricing</h3>
+        <p className="mt-2 text-slate-300">Simple pricing for prompt-heavy product teams.</p>
+        <div className="mt-6 grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="text-4xl font-semibold text-white">$39<span className="text-xl text-slate-400">/mo</span></p>
             <ul className="mt-4 space-y-2 text-sm text-slate-300">
-              <li>Unlimited prompt repositories</li>
-              <li>Version diffs with structured release notes</li>
-              <li>A/B test runner with winner declaration</li>
-              <li>Quality, latency, and cost dashboards</li>
+              <li>Unlimited prompt repositories and version commits</li>
+              <li>Unlimited A/B test runs with confidence insights</li>
+              <li>Team collaboration presence + release history</li>
+              <li>API webhook support for billing and access control</li>
             </ul>
           </div>
-          <div className="rounded-lg border border-[#2f81f7]/50 bg-[#102040]/35 p-5">
-            <p className="text-sm text-blue-200">Launch Plan</p>
-            <p className="mt-2 text-4xl font-bold text-white">$39</p>
-            <p className="text-sm text-blue-100">per month</p>
-            <a
-              href={paymentLink}
-              className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-[#2f81f7] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1f6feb]"
-            >
-              Start Subscription
-            </a>
-          </div>
+          <a
+            className="inline-flex items-center justify-center rounded-xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
+            href={process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Start with Stripe Checkout
+          </a>
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#30363d] bg-[#11161d] p-6">
-        <h2 className="text-2xl font-semibold text-white">FAQ</h2>
-        <div className="mt-5 space-y-3">
-          {faqs.map((faq) => (
-            <div key={faq.question} className="rounded-lg border border-[#30363d] bg-[#161b22] p-4">
-              <h3 className="text-sm font-semibold text-slate-100">{faq.question}</h3>
-              <p className="mt-2 text-sm text-slate-400">{faq.answer}</p>
-            </div>
+      <section className="space-y-4 pb-10">
+        <h3 className="text-2xl font-semibold text-white">FAQ</h3>
+        <div className="space-y-3">
+          {faqs.map((item) => (
+            <article key={item.question} className="rounded-2xl border border-slate-800 bg-[#111a26] p-5">
+              <h4 className="text-base font-semibold text-slate-100">{item.question}</h4>
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">{item.answer}</p>
+            </article>
           ))}
         </div>
       </section>
-    </div>
+    </main>
+  );
+}
+
+function FeatureCard({
+  icon,
+  title,
+  description
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-800 bg-[#111a26] p-5">
+      <div className="inline-flex rounded-lg border border-slate-700 bg-[#0d1622] p-2">{icon}</div>
+      <h3 className="mt-4 text-lg font-semibold text-white">{title}</h3>
+      <p className="mt-2 text-sm leading-relaxed text-slate-300">{description}</p>
+    </article>
   );
 }

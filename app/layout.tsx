@@ -1,58 +1,67 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import type { Metadata, Viewport } from "next";
+import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import type { ReactNode } from "react";
 
 import "./globals.css";
 
+const heading = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-heading"
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono"
+});
+
 export const metadata: Metadata = {
-  title: "Prompt Version Tracker | Git for AI prompt iterations",
+  metadataBase: new URL("https://prompt-version-tracker.app"),
+  title: {
+    default: "Prompt Version Tracker | Git for AI prompt iterations",
+    template: "%s | Prompt Version Tracker"
+  },
   description:
-    "Track every prompt change, run side-by-side A/B tests, and prove prompt improvements with measurable performance analytics.",
-  keywords: [
-    "prompt version control",
-    "AI prompt management",
-    "prompt A/B testing",
-    "prompt analytics",
-    "prompt engineering"
-  ],
+    "Version control for AI prompts with native A/B testing, performance analytics, and release confidence scoring for prompt engineering teams.",
   openGraph: {
+    type: "website",
     title: "Prompt Version Tracker",
     description:
-      "Version control and experimentation platform built for AI prompt teams.",
-    type: "website",
-    url: "https://prompt-version-tracker.example",
-    siteName: "Prompt Version Tracker"
+      "Ship better prompts with version history, A/B tests, and experiment analytics in one Git-like workflow.",
+    siteName: "Prompt Version Tracker",
+    url: "https://prompt-version-tracker.app"
   },
   twitter: {
     card: "summary_large_image",
     title: "Prompt Version Tracker",
-    description:
-      "Stop losing prompt iterations. Ship with version history, A/B testing, and performance analytics."
+    description: "Git for AI prompt iterations with measurable performance impact."
+  },
+  keywords: [
+    "prompt versioning",
+    "prompt engineering",
+    "ai tooling",
+    "ab testing prompts",
+    "prompt analytics"
+  ],
+  robots: {
+    index: true,
+    follow: true
+  },
+  alternates: {
+    canonical: "/"
   }
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const viewport: Viewport = {
+  themeColor: "#0d1117",
+  colorScheme: "dark"
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-[#0d1117] text-slate-100 antialiased">
-        <header className="sticky top-0 z-40 border-b border-[#30363d] bg-[#0d1117]/95 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-            <Link href="/" className="text-sm font-semibold tracking-wide text-slate-100">
-              prompt-version-tracker
-            </Link>
-            <nav className="flex items-center gap-4 text-xs text-slate-300 sm:text-sm">
-              <Link href="/dashboard" className="transition hover:text-white">
-                Dashboard
-              </Link>
-              <Link href="/analytics" className="transition hover:text-white">
-                Analytics
-              </Link>
-              <Link href="/unlock" className="transition hover:text-white">
-                Unlock
-              </Link>
-            </nav>
-          </div>
-        </header>
-        <main>{children}</main>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${heading.variable} ${mono.variable} bg-[#0d1117] text-slate-100 antialiased`}>
+        {children}
       </body>
     </html>
   );

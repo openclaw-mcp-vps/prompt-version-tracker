@@ -1,169 +1,301 @@
 "use client";
 
-import { useState } from "react";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo, useState } from "react";
+import { create } from "zustand";
+import { CheckCircle2, Loader2, Save, Users2 } from "lucide-react";
 
-const promptSchema = z.object({
-  name: z.string().min(3).max(120).optional(),
-  description: z.string().max(280).optional(),
-  content: z.string().min(10, "Prompt content should be at least 10 characters"),
-  notes: z.string().max(320),
-  model: z.string().min(2),
-  temperature: z.coerce.number().min(0).max(2)
-});
+import type { PromptVersion } from "@/lib/models";
 
-export type PromptFormValues = z.infer<typeof promptSchema>;
+type Collaborator = {
+  id: string;
+  label: string;
+  lastSeen: number;
+};
+
+type CollaborationState = {
+  collaborators: Record<string, Collaborator>;
+  touch: (entry: Collaborator) => void;
+  prune: (ttlMs: number) => void;
+};
+
+const useCollaborationStore = create<CollaborationState>((set) => ({
+  collaborators: {},
+  touch: (entry) =>
+    set((state) => ({
+      collaborators: {
+        ...state.collaborators,
+        [entry.id]: entry
+      }
+    })),
+  prune: (ttlMs) =>
+    set((state) => {
+      const now = Date.now();
+      const next: Record<string, Collaborator> = {};
+
+      Object.entries(state.collaborators).forEach(([id, collaborator]) => {
+        if (now - collaborator.lastSeen <= ttlMs) {
+          next[id] = collaborator;
+        }
+      });
+
+      return { collaborators: next };
+    })
+}));
+
+function sessionIdentity(): { id: string; label: string } {
+  if (typeof window === "undefined") {
+    return { id: "server", label: "server" };
+  }
+
+  const key = "pvt-collab-identity";
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) {
+    return JSON.parse(existing) as { id: string; label: string };
+  }
+
+  const id = crypto.randomUUID();
+  const labels = ["Atlas", "Nova", "Rivet", "Echo", "Comet", "Arc"]; 
+  const label = `${labels[Math.floor(Math.random() * labels.length)]}-${id.slice(0, 4)}`;
+  const next = { id, label };
+  window.sessionStorage.setItem(key, JSON.stringify(next));
+
+  return next;
+}
 
 type PromptEditorProps = {
-  mode: "create-prompt" | "new-version";
-  title: string;
-  helper: string;
-  submitLabel: string;
-  initialValues?: Partial<PromptFormValues>;
-  onSubmit: (values: PromptFormValues) => Promise<void>;
+  promptId: string;
+  initialContent: string;
+  currentVersion: number;
+  onVersionCreated: (version: PromptVersion) => void;
 };
 
 export function PromptEditor({
-  mode,
-  title,
-  helper,
-  submitLabel,
-  initialValues,
-  onSubmit
+  promptId,
+  initialContent,
+  currentVersion,
+  onVersionCreated
 }: PromptEditorProps) {
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [content, setContent] = useState(initialContent);
+  const [lastSavedContent, setLastSavedContent] = useState(initialContent);
+  const [notes, setNotes] = useState("Refined for stronger tool-use and safety constraints");
+  const [createdBy, setCreatedBy] = useState("Prompt Engineer");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<{ id: string; label: string } | null>(null);
+  const [remoteDraft, setRemoteDraft] = useState<string | null>(null);
+  const [remoteLabel, setRemoteLabel] = useState<string | null>(null);
 
-  const form = useForm<PromptFormValues>({
-    resolver: zodResolver(promptSchema),
-    defaultValues: {
-      name: initialValues?.name ?? "",
-      description: initialValues?.description ?? "",
-      content: initialValues?.content ?? "",
-      notes: initialValues?.notes ?? "",
-      model: initialValues?.model ?? "gpt-4.1",
-      temperature: initialValues?.temperature ?? 0.2
-    }
-  });
+  const { collaborators, touch, prune } = useCollaborationStore();
 
-  async function handleSubmit(values: PromptFormValues) {
-    setSubmitError(null);
+  useEffect(() => {
+    setContent(initialContent);
+    setLastSavedContent(initialContent);
+  }, [initialContent]);
 
-    if (mode === "create-prompt" && (!values.name || !values.description)) {
-      setSubmitError("Prompt name and description are required.");
+  useEffect(() => {
+    const me = sessionIdentity();
+    setIdentity(me);
+
+    if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
       return;
     }
 
-    setSubmitting(true);
+    const channel = new BroadcastChannel(`prompt-collab-${promptId}`);
+    const ping = (): void => {
+      const payload = {
+        type: "presence",
+        id: me.id,
+        label: me.label,
+        ts: Date.now()
+      };
+      channel.postMessage(payload);
+      touch({ id: me.id, label: me.label, lastSeen: payload.ts });
+    };
 
-    try {
-      await onSubmit(values);
-      if (mode === "create-prompt") {
-        form.reset({
-          name: "",
-          description: "",
-          content: "",
-          notes: "",
-          model: "gpt-4.1",
-          temperature: 0.2
+    channel.onmessage = (event: MessageEvent) => {
+      const payload = event.data as {
+        type: "presence" | "draft";
+        id: string;
+        label: string;
+        ts: number;
+        content?: string;
+      };
+
+      if (payload.id === me.id) {
+        return;
+      }
+
+      if (payload.type === "presence") {
+        touch({
+          id: payload.id,
+          label: payload.label,
+          lastSeen: payload.ts
         });
       }
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Could not save prompt");
+
+      if (payload.type === "draft" && typeof payload.content === "string") {
+        touch({
+          id: payload.id,
+          label: payload.label,
+          lastSeen: payload.ts
+        });
+        setRemoteDraft(payload.content);
+        setRemoteLabel(payload.label);
+      }
+    };
+
+    ping();
+    const intervalId = window.setInterval(() => {
+      ping();
+      prune(12_000);
+    }, 4_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      channel.close();
+    };
+  }, [promptId, prune, touch]);
+
+  const activeCollaborators = useMemo(() => {
+    const now = Date.now();
+
+    return Object.values(collaborators)
+      .filter((entry) => now - entry.lastSeen <= 12_000)
+      .sort((a, b) => b.lastSeen - a.lastSeen);
+  }, [collaborators]);
+
+  async function saveVersion(): Promise<void> {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const response = await fetch(`/api/prompts/${promptId}/versions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          content,
+          notes,
+          createdBy
+        })
+      });
+
+      const data = (await response.json()) as { error?: string; version?: PromptVersion };
+
+      if (!response.ok || !data.version) {
+        setError(data.error ?? "Unable to save new version.");
+        return;
+      }
+
+      setLastSavedContent(content);
+      setStatus(`Committed v${data.version.version_number}`);
+      onVersionCreated(data.version);
+    } catch {
+      setError("Network error while saving version.");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
+  function onContentChange(next: string): void {
+    setContent(next);
+
+    if (typeof window === "undefined" || !("BroadcastChannel" in window) || !identity) {
+      return;
+    }
+
+    const channel = new BroadcastChannel(`prompt-collab-${promptId}`);
+    channel.postMessage({
+      type: "draft",
+      id: identity.id,
+      label: identity.label,
+      ts: Date.now(),
+      content: next
+    });
+    channel.close();
+  }
+
+  const hasUnsavedChanges = content !== lastSavedContent;
+
   return (
-    <div className="rounded-xl border border-[#30363d] bg-[#161b22] p-5">
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      <p className="mt-1 text-sm text-slate-400">{helper}</p>
-
-      <form onSubmit={form.handleSubmit(handleSubmit)} className="mt-5 space-y-4">
-        {mode === "create-prompt" ? (
-          <>
-            <label className="block space-y-1 text-sm">
-              <span className="text-slate-300">Prompt name</span>
-              <input
-                {...form.register("name")}
-                placeholder="Customer support deflection"
-                className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-slate-100 outline-none transition focus:border-[#2f81f7]"
-              />
-            </label>
-
-            <label className="block space-y-1 text-sm">
-              <span className="text-slate-300">Description</span>
-              <input
-                {...form.register("description")}
-                placeholder="Routes billing questions to self-serve answers"
-                className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-slate-100 outline-none transition focus:border-[#2f81f7]"
-              />
-            </label>
-          </>
-        ) : null}
-
-        <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Prompt content</span>
-          <textarea
-            {...form.register("content")}
-            rows={10}
-            placeholder="You are a support assistant that..."
-            className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 font-mono text-xs text-slate-100 outline-none transition focus:border-[#2f81f7] sm:text-sm"
-          />
-          <span className="text-xs text-slate-500">
-            Focus each revision on one hypothesis so A/B outcomes stay interpretable.
-          </span>
-        </label>
-
-        <label className="block space-y-1 text-sm">
-          <span className="text-slate-300">Version notes</span>
-          <textarea
-            {...form.register("notes")}
-            rows={3}
-            placeholder="Changed refusal style and answer formatting for compliance"
-            className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-slate-100 outline-none transition focus:border-[#2f81f7]"
-          />
-        </label>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block space-y-1 text-sm">
-            <span className="text-slate-300">Model</span>
-            <input
-              {...form.register("model")}
-              placeholder="gpt-4.1"
-              className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-slate-100 outline-none transition focus:border-[#2f81f7]"
-            />
-          </label>
-
-          <label className="block space-y-1 text-sm">
-            <span className="text-slate-300">Temperature</span>
-            <input
-              {...form.register("temperature")}
-              type="number"
-              step="0.1"
-              min="0"
-              max="2"
-              className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-slate-100 outline-none transition focus:border-[#2f81f7]"
-            />
-          </label>
+    <section className="space-y-5 rounded-3xl border border-slate-800 bg-[#101926] p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Prompt Workspace</h2>
+          <p className="text-sm text-slate-400">Current release: v{currentVersion}</p>
         </div>
+        <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">
+          <Users2 className="h-3.5 w-3.5 text-sky-300" />
+          {activeCollaborators.length} active collaborator{activeCollaborators.length === 1 ? "" : "s"}
+        </div>
+      </div>
 
-        {form.formState.errors.content ? (
-          <p className="text-xs text-red-300">{form.formState.errors.content.message}</p>
-        ) : null}
-        {submitError ? <p className="text-xs text-red-300">{submitError}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        {activeCollaborators.map((collaborator) => (
+          <span
+            key={collaborator.id}
+            className="rounded-full border border-slate-700 bg-[#0c1522] px-3 py-1 text-xs text-slate-300"
+          >
+            {collaborator.label}
+          </span>
+        ))}
+      </div>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-2 text-sm">
+          <span className="text-slate-300">Author</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-[#0f1723] px-3 py-2 text-sm text-slate-100 outline-none ring-sky-500 transition focus:ring-2"
+            onChange={(event) => setCreatedBy(event.target.value)}
+            value={createdBy}
+          />
+        </label>
+        <label className="space-y-2 text-sm">
+          <span className="text-slate-300">Commit notes</span>
+          <input
+            className="w-full rounded-xl border border-slate-700 bg-[#0f1723] px-3 py-2 text-sm text-slate-100 outline-none ring-sky-500 transition focus:ring-2"
+            onChange={(event) => setNotes(event.target.value)}
+            value={notes}
+          />
+        </label>
+      </div>
+
+      <label className="block space-y-2 text-sm">
+        <span className="text-slate-300">Prompt content</span>
+        <textarea
+          className="min-h-64 w-full rounded-2xl border border-slate-700 bg-[#0b1320] p-4 font-mono text-sm leading-relaxed text-slate-100 outline-none ring-sky-500 transition focus:ring-2"
+          onChange={(event) => onContentChange(event.target.value)}
+          value={content}
+        />
+      </label>
+
+      {remoteDraft ? (
+        <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-4 text-xs text-sky-200">
+          Live draft update from {remoteLabel}: {remoteDraft.slice(0, 180)}
+          {remoteDraft.length > 180 ? "..." : ""}
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3">
         <button
-          type="submit"
-          disabled={submitting}
-          className="inline-flex items-center justify-center rounded-md bg-[#2f81f7] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1f6feb] disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-70"
+          disabled={saving || !hasUnsavedChanges}
+          onClick={saveVersion}
+          type="button"
         >
-          {submitting ? "Saving..." : submitLabel}
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Commit version
         </button>
-      </form>
-    </div>
+        {status ? (
+          <p className="inline-flex items-center gap-1 text-sm text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" /> {status}
+          </p>
+        ) : null}
+        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+      </div>
+    </section>
   );
 }

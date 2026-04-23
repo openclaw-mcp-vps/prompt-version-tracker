@@ -1,170 +1,255 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  createABTest,
-  finalizeTest,
-  getTestSummary,
-  listRuns,
-  listTestsForPrompt,
-  recordRun
-} from "@/lib/ab-testing";
-import { requireApiAccess } from "@/lib/paywall";
+import { deriveTestInsight } from "@/lib/ab-testing";
+import { sql } from "@/lib/db";
 
 const createTestSchema = z.object({
-  action: z.literal("create"),
-  promptId: z.string().min(4),
-  versionAId: z.string().min(4),
-  versionBId: z.string().min(4),
-  trafficSplit: z.coerce.number().min(1).max(99).default(50)
+  mode: z.literal("create"),
+  promptId: z.string().uuid(),
+  name: z.string().min(4).max(120),
+  versionAId: z.number().int().positive(),
+  versionBId: z.number().int().positive(),
+  trafficSplit: z.number().int().min(5).max(95).default(50)
 });
 
-const runTestSchema = z.object({
-  action: z.literal("run"),
-  testId: z.string().min(4),
-  selectedVersion: z.enum(["A", "B"]).nullable().optional(),
-  inputPayload: z.record(z.unknown()).default({}),
-  outputText: z.string().min(3),
-  score: z.coerce.number().min(0).max(100).nullable().optional(),
-  latencyMs: z.coerce.number().min(0).nullable().optional(),
-  tokenUsage: z.coerce.number().min(0).nullable().optional(),
-  costUsd: z.coerce.number().min(0).nullable().optional(),
-  evaluationNotes: z.string().max(320).optional().default("")
+const recordSchema = z.object({
+  mode: z.literal("record"),
+  testId: z.number().int().positive(),
+  variant: z.enum(["A", "B"]),
+  impressions: z.number().int().min(0),
+  conversions: z.number().int().min(0),
+  avgLatencyMs: z.number().min(0),
+  qualityScore: z.number().min(0).max(100),
+  complete: z.boolean().optional()
 });
 
-const finalizeSchema = z.object({
-  action: z.literal("finalize"),
-  testId: z.string().min(4),
-  winner: z.enum(["A", "B"])
-});
+const testRequestSchema = z.union([createTestSchema, recordSchema]);
 
-const postSchema = z.discriminatedUnion("action", [
-  createTestSchema,
-  runTestSchema,
-  finalizeSchema
-]);
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const promptId = request.nextUrl.searchParams.get("promptId");
 
-export async function GET(request: Request) {
-  try {
-    await requireApiAccess();
+  const tests = await sql<{
+    id: number;
+    prompt_id: string;
+    name: string;
+    version_a_id: number;
+    version_b_id: number;
+    version_a_number: number;
+    version_b_number: number;
+    traffic_split: number;
+    status: "running" | "paused" | "completed";
+    created_at: string;
+    ended_at: string | null;
+    a_impressions: number;
+    a_conversions: number;
+    a_latency: number;
+    a_quality: number;
+    b_impressions: number;
+    b_conversions: number;
+    b_latency: number;
+    b_quality: number;
+  }>(
+    `
+    SELECT
+      t.id,
+      t.prompt_id,
+      t.name,
+      t.version_a_id,
+      t.version_b_id,
+      va.version_number AS version_a_number,
+      vb.version_number AS version_b_number,
+      t.traffic_split,
+      t.status,
+      t.created_at,
+      t.ended_at,
+      COALESCE(ra.impressions, 0)::int AS a_impressions,
+      COALESCE(ra.conversions, 0)::int AS a_conversions,
+      COALESCE(ra.avg_latency_ms, 0)::float AS a_latency,
+      COALESCE(ra.quality_score, 0)::float AS a_quality,
+      COALESCE(rb.impressions, 0)::int AS b_impressions,
+      COALESCE(rb.conversions, 0)::int AS b_conversions,
+      COALESCE(rb.avg_latency_ms, 0)::float AS b_latency,
+      COALESCE(rb.quality_score, 0)::float AS b_quality
+    FROM ab_tests t
+    INNER JOIN prompt_versions va ON va.id = t.version_a_id
+    INNER JOIN prompt_versions vb ON vb.id = t.version_b_id
+    LEFT JOIN ab_test_results ra ON ra.test_id = t.id AND ra.variant = 'A'
+    LEFT JOIN ab_test_results rb ON rb.test_id = t.id AND rb.variant = 'B'
+    WHERE ($1::text IS NULL OR t.prompt_id = $1)
+    ORDER BY t.created_at DESC;
+    `,
+    [promptId]
+  );
 
-    const url = new URL(request.url);
-    const promptId = url.searchParams.get("promptId");
-    const testId = url.searchParams.get("testId");
-
-    if (!promptId && !testId) {
-      return NextResponse.json(
-        {
-          message: "Either promptId or testId is required"
-        },
-        { status: 400 }
-      );
-    }
-
-    if (promptId) {
-      const tests = await listTestsForPrompt(promptId);
-      return NextResponse.json({ tests });
-    }
-
-    const [summary, runs] = await Promise.all([
-      getTestSummary(testId ?? ""),
-      listRuns(testId ?? "")
-    ]);
-
-    return NextResponse.json({ summary, runs });
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Access denied")) {
-      return NextResponse.json({ message: error.message }, { status: 401 });
-    }
-
-    return NextResponse.json(
+  const data = tests.rows.map((test) => ({
+    ...test,
+    insight: deriveTestInsight(
       {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to load tests right now"
+        impressions: test.a_impressions,
+        conversions: test.a_conversions,
+        avgLatencyMs: test.a_latency,
+        qualityScore: test.a_quality
       },
-      { status: 500 }
-    );
-  }
+      {
+        impressions: test.b_impressions,
+        conversions: test.b_conversions,
+        avgLatencyMs: test.b_latency,
+        qualityScore: test.b_quality
+      }
+    )
+  }));
+
+  return NextResponse.json({ tests: data });
 }
 
-export async function POST(request: Request) {
-  try {
-    await requireApiAccess();
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const body = await request.json();
+  const parsed = testRequestSchema.safeParse(body);
 
-    const payload = postSchema.parse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
 
-    if (payload.action === "create") {
-      const test = await createABTest({
-        promptId: payload.promptId,
-        versionAId: payload.versionAId,
-        versionBId: payload.versionBId,
-        trafficSplit: payload.trafficSplit
-      });
+  if (parsed.data.mode === "create") {
+    const prompt = await sql<{ id: string }>(
+      `
+      SELECT id
+      FROM prompts
+      WHERE id = $1
+      LIMIT 1;
+      `,
+      [parsed.data.promptId]
+    );
 
-      return NextResponse.json(
-        {
-          message: "A/B test started.",
-          test
-        },
-        { status: 201 }
-      );
+    if (!prompt.rows[0]) {
+      return NextResponse.json({ error: "Prompt not found." }, { status: 404 });
     }
 
-    if (payload.action === "run") {
-      const run = await recordRun({
-        testId: payload.testId,
-        selectedVersion: payload.selectedVersion ?? undefined,
-        inputPayload: payload.inputPayload,
-        outputText: payload.outputText,
-        score: payload.score ?? null,
-        latencyMs: payload.latencyMs ?? null,
-        tokenUsage: payload.tokenUsage ?? null,
-        costUsd: payload.costUsd ?? null,
-        evaluationNotes: payload.evaluationNotes
-      });
+    const versions = await sql<{ id: number }>(
+      `
+      SELECT id
+      FROM prompt_versions
+      WHERE prompt_id = $1
+        AND id IN ($2, $3);
+      `,
+      [parsed.data.promptId, parsed.data.versionAId, parsed.data.versionBId]
+    );
 
-      return NextResponse.json(
-        {
-          message: "Test run recorded.",
-          run
-        },
-        { status: 201 }
-      );
+    if (versions.rows.length < 2) {
+      return NextResponse.json({ error: "Both version IDs must belong to the same prompt." }, { status: 400 });
     }
 
-    const test = await finalizeTest({
-      testId: payload.testId,
-      winnerLabel: payload.winner
-    });
+    const inserted = await sql<{
+      id: number;
+      prompt_id: string;
+      name: string;
+      version_a_id: number;
+      version_b_id: number;
+      traffic_split: number;
+      status: "running";
+      created_at: string;
+    }>(
+      `
+      INSERT INTO ab_tests (prompt_id, name, version_a_id, version_b_id, traffic_split)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, prompt_id, name, version_a_id, version_b_id, traffic_split, status, created_at;
+      `,
+      [
+        parsed.data.promptId,
+        parsed.data.name,
+        parsed.data.versionAId,
+        parsed.data.versionBId,
+        parsed.data.trafficSplit
+      ]
+    );
 
-    return NextResponse.json({
-      message: "Test finalized and winner declared.",
-      test
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          message: error.issues[0]?.message ?? "Invalid test payload"
-        },
-        { status: 400 }
-      );
-    }
+    await sql(
+      `
+      INSERT INTO ab_test_results (test_id, variant, impressions, conversions, avg_latency_ms, quality_score)
+      VALUES
+        ($1, 'A', 0, 0, 0, 0),
+        ($1, 'B', 0, 0, 0, 0);
+      `,
+      [inserted.rows[0].id]
+    );
 
-    if (error instanceof Error && error.message.startsWith("Access denied")) {
-      return NextResponse.json({ message: error.message }, { status: 401 });
-    }
+    return NextResponse.json({ test: inserted.rows[0] }, { status: 201 });
+  }
 
-    return NextResponse.json(
-      {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to process test request right now"
-      },
-      { status: 500 }
+  const current = await sql<{
+    id: number;
+    impressions: number;
+    conversions: number;
+    avg_latency_ms: number;
+    quality_score: number;
+  }>(
+    `
+    SELECT id, impressions, conversions, avg_latency_ms::float, quality_score::float
+    FROM ab_test_results
+    WHERE test_id = $1
+      AND variant = $2
+    LIMIT 1;
+    `,
+    [parsed.data.testId, parsed.data.variant]
+  );
+
+  if (!current.rows[0]) {
+    return NextResponse.json({ error: "Test result row not found." }, { status: 404 });
+  }
+
+  const row = current.rows[0];
+  const newImpressions = row.impressions + parsed.data.impressions;
+  const latencyWeighted =
+    newImpressions === 0
+      ? 0
+      : (row.avg_latency_ms * row.impressions + parsed.data.avgLatencyMs * parsed.data.impressions) /
+        newImpressions;
+
+  const qualityWeighted =
+    newImpressions === 0
+      ? 0
+      : (row.quality_score * row.impressions + parsed.data.qualityScore * parsed.data.impressions) /
+        newImpressions;
+
+  const updated = await sql<{
+    id: number;
+    test_id: number;
+    variant: "A" | "B";
+    impressions: number;
+    conversions: number;
+    avg_latency_ms: number;
+    quality_score: number;
+  }>(
+    `
+    UPDATE ab_test_results
+    SET
+      impressions = $1,
+      conversions = $2,
+      avg_latency_ms = $3,
+      quality_score = $4
+    WHERE id = $5
+    RETURNING id, test_id, variant, impressions, conversions, avg_latency_ms::float, quality_score::float;
+    `,
+    [
+      newImpressions,
+      row.conversions + parsed.data.conversions,
+      Number(latencyWeighted.toFixed(2)),
+      Number(qualityWeighted.toFixed(2)),
+      row.id
+    ]
+  );
+
+  if (parsed.data.complete) {
+    await sql(
+      `
+      UPDATE ab_tests
+      SET status = 'completed', ended_at = NOW()
+      WHERE id = $1;
+      `,
+      [parsed.data.testId]
     );
   }
+
+  return NextResponse.json({ result: updated.rows[0] });
 }

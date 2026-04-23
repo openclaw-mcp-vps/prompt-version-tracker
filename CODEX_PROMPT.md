@@ -11,30 +11,28 @@ NICHE: ai-tools
 PRICE: $$39/mo
 
 ARCHITECTURE SPEC:
-A Next.js web app with a Git-like interface for managing AI prompt versions, built-in A/B testing framework, and analytics dashboard. Uses PostgreSQL for prompt storage and version history, with real-time performance tracking and comparison tools.
+A Next.js web app with a Git-like interface for managing AI prompt versions, built-in A/B testing framework, and analytics dashboard. Uses PostgreSQL for version history and test results, with real-time collaboration features for prompt engineering teams.
 
 PLANNED FILES:
 - app/page.tsx
 - app/dashboard/page.tsx
 - app/prompts/[id]/page.tsx
 - app/prompts/[id]/versions/page.tsx
-- app/prompts/[id]/test/page.tsx
-- app/analytics/page.tsx
-- components/PromptEditor.tsx
-- components/VersionDiff.tsx
-- components/TestRunner.tsx
-- components/PerformanceChart.tsx
-- lib/prompt-versioning.ts
-- lib/ab-testing.ts
-- lib/analytics.ts
-- lib/database.ts
-- prisma/schema.prisma
+- app/prompts/[id]/tests/page.tsx
 - app/api/prompts/route.ts
-- app/api/versions/route.ts
+- app/api/prompts/[id]/versions/route.ts
 - app/api/tests/route.ts
 - app/api/webhooks/lemonsqueezy/route.ts
+- components/PromptEditor.tsx
+- components/VersionDiff.tsx
+- components/TestResults.tsx
+- components/AnalyticsDashboard.tsx
+- lib/db/schema.ts
+- lib/git-operations.ts
+- lib/ab-testing.ts
+- lib/lemonsqueezy.ts
 
-DEPENDENCIES: next, react, typescript, tailwindcss, prisma, @prisma/client, postgresql, @lemonsqueezy/lemonsqueezy.js, recharts, diff, monaco-editor, @next-auth/prisma-adapter, next-auth, zod, react-hook-form, @hookform/resolvers
+DEPENDENCIES: next, react, typescript, tailwindcss, drizzle-orm, postgres, @auth/drizzle-adapter, next-auth, @lemonsqueezy/lemonsqueezy.js, recharts, monaco-editor, diff2html, zustand, zod, lucide-react
 
 REQUIREMENTS:
 - Next.js 15 with App Router (app/ directory)

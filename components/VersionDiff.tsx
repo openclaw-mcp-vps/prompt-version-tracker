@@ -1,45 +1,59 @@
 "use client";
 
-import { diffWordsWithSpace } from "diff";
+import { useMemo } from "react";
+
+import { buildLineDiff } from "@/lib/git-operations";
 
 type VersionDiffProps = {
   previousContent: string;
-  currentContent: string;
+  nextContent: string;
+  previousLabel: string;
+  nextLabel: string;
 };
 
-export function VersionDiff({ previousContent, currentContent }: VersionDiffProps) {
-  const chunks = diffWordsWithSpace(previousContent, currentContent);
+export function VersionDiff({
+  previousContent,
+  nextContent,
+  previousLabel,
+  nextLabel
+}: VersionDiffProps) {
+  const diff = useMemo(() => buildLineDiff(previousContent, nextContent), [previousContent, nextContent]);
 
   return (
-    <div className="rounded-xl border border-[#30363d] bg-[#11161d] p-4">
-      <h3 className="text-sm font-semibold text-slate-100">Version Diff</h3>
-      <p className="mt-1 text-xs text-slate-500">
-        Red text was removed. Green text was added.
-      </p>
-      <pre className="mt-3 max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-[#30363d] bg-[#0d1117] p-3 text-xs leading-relaxed text-slate-200">
-        {chunks.map((chunk, index) => {
-          if (chunk.added) {
+    <section className="overflow-hidden rounded-3xl border border-slate-800 bg-[#101926]">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-5 py-4">
+        <h3 className="text-base font-semibold text-white">Version Diff</h3>
+        <p className="font-mono text-xs text-slate-400">
+          {previousLabel} → {nextLabel}
+        </p>
+      </header>
+      <div className="max-h-[460px] overflow-auto p-4 font-mono text-xs leading-6">
+        {diff.map((line, index) => {
+          const base = "block rounded px-2";
+
+          if (line.kind === "added") {
             return (
-              <span key={`add-${index}`} className="bg-emerald-500/20 text-emerald-200">
-                {chunk.value}
-              </span>
+              <code key={`${line.kind}-${index}-${line.content}`} className={`${base} bg-emerald-500/10 text-emerald-300`}>
+                + {line.content || " "}
+              </code>
             );
           }
 
-          if (chunk.removed) {
+          if (line.kind === "removed") {
             return (
-              <span
-                key={`remove-${index}`}
-                className="bg-red-500/20 text-red-200 line-through"
-              >
-                {chunk.value}
-              </span>
+              <code key={`${line.kind}-${index}-${line.content}`} className={`${base} bg-rose-500/10 text-rose-300`}>
+                - {line.content || " "}
+              </code>
             );
           }
 
-          return <span key={`same-${index}`}>{chunk.value}</span>;
+          return (
+            <code key={`${line.kind}-${index}-${line.content}`} className={`${base} text-slate-400`}>
+              {line.content || " "}
+            </code>
+          );
         })}
-      </pre>
-    </div>
+      </div>
+    </section>
   );
 }
